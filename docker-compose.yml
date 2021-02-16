@@ -1,0 +1,32 @@
+version: '3.7'
+
+services:
+  redis:
+    image: redis
+  celery-beat:
+    image: task_runner
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: "celery -A celery_factory:celery beat -S redbeat.RedBeatScheduler --loglevel=info"
+    depends_on:
+      - redis
+    links:
+      - redis
+  celery-worker:
+    image: task_runner
+    command: "celery worker -A celery_factory:celery --loglevel=info -E"
+    depends_on:
+      - redis
+      - celery-beat
+    links:
+      - redis
+  flower:  
+    image: task_runner
+    environment:
+      - FLOWER_PORT=5556
+    links:
+      - redis
+    ports:  
+      - 5556:5556
+    command: ./start_flower
