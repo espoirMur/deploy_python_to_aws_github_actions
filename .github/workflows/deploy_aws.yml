@@ -75,4 +75,4 @@ jobs:
        task-definition:  ${{ steps.render-worker-container.outputs.task-definition }}
        service:  ecs-devops-service
        cluster:  ecs-devops-cluster
-       wait-for-service-stability:  false
+       wait-for-service-stability:  true
