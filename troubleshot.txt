@@ -1,0 +1,12 @@
+If nothing start you should try to check the stop task arn with 
+
+aws ecs list-tasks --cluster ecs-devops-cluster  --region us-east-2  --desired-status STOPPED
+
+and then use the arn to check the stopped reason
+
+aws ecs describe-tasks \
+     --cluster ecs-devops-cluster \
+     --tasks task_arn_from previous step \
+     --region us-east-2 --debug
+
+This describes the task with the specified arn
