@@ -1,0 +1,78 @@
+on:
+  push:
+    branches:
+      - master
+name: Deploy to Amazon ECS
+jobs:
+  deploy:
+    name:  Deploy
+    runs-on:  ubuntu-latest
+    steps:
+    - name:  Checkout
+      uses:  actions/checkout@v1
+    - name:  Set up Python python-version
+      uses:  actions/setup-python@v1
+      with:
+        python-version:  3.7
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v1
+       # https://github.com/docker/setup-buildx-action
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v1
+    - name:  create docker cache
+      uses:  actions/cache@v1
+      with:
+        path:  ${{ github.workspace }}/cache
+        key:  ${{ runner.os }}-docker-${{ hashfiles('cache/**') }}
+        restore-keys:  |
+         ${{ runner.os }}-docker-
+    - name:  generating the config files
+      run:  |
+        echo '''${{ secrets.CONFIGURATION_FILE }}''' >> .env
+        echo "done creating the configuration file"
+    - name:  Configure AWS credentials
+      uses:  aws-actions/configure-aws-credentials@v1    
+      with:
+        aws-access-key-id:  ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key:  ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region:  us-east-2
+    - name:  Login to Amazon ECR
+      id:  login-ecr
+      uses:  aws-actions/amazon-ecr-login@v1
+    - name:  Build, tag, and push image to Amazon ECR
+      id:  build-image     
+      env:
+        ECR_REGISTRY:  ${{ steps.login-ecr.outputs.registry }} 
+        ECR_REPOSITORY:  ecs-devops-repository
+        IMAGE_TAG:  ${{ github.sha }}
+      run:  |
+        docker buildx build -f Dockerfile --cache-from "type=local,src=$GITHUB_WORKSPACE/cache" --cache-to "type=local,dest=$GITHUB_WORKSPACE/cache" --output "type=image, name=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG,push=true" .
+        echo "::set-output name=image::$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+    - name:  Fill in the new image ID in the Amazon ECS task definition of the beat container
+      id:  render-beat-container       
+      uses:  aws-actions/amazon-ecs-render-task-definition@v1
+      with:
+       task-definition:  ./.aws/task-definition.json
+       container-name:  celery-beat
+       image:  ${{ steps.build-image.outputs.image }} 
+    - name:  Fill in the new image ID in the Amazon ECS task definition of the flower container
+      id:  render-flower-container
+      uses:  aws-actions/amazon-ecs-render-task-definition@v1
+      with:
+       task-definition:  ${{ steps.render-beat-container.outputs.task-definition }}
+       container-name:  flower
+       image:  ${{ steps.build-image.outputs.image }}
+    - name:  Fill in the new image ID in the Amazon ECS task definition of the worker container
+      id:  render-worker-container 
+      uses:  aws-actions/amazon-ecs-render-task-definition@v1
+      with:
+       task-definition:  ${{ steps.render-flower-container.outputs.task-definition }}
+       container-name:  celery-worker
+       image:  ${{ steps.build-image.outputs.image }}
+    - name:  Deploy Amazon ECS task definition
+      uses:  aws-actions/amazon-ecs-deploy-task-definition@v1
+      with:
+       task-definition:  ${{ steps.render-worker-container.outputs.task-definition }}
+       service:  ecs-devops-service
+       cluster:  ecs-devops-cluster
+       wait-for-service-stability:  false
