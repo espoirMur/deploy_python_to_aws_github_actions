@@ -6,7 +6,7 @@ and then use the arn to check the stopped reason
 
 aws ecs describe-tasks \
      --cluster ecs-devops-cluster \
-     --tasks task_arn_from previous step \
+     --tasks task_arn_from_previous_step \
      --region us-east-2 --debug
 
 This describes the task with the specified arn
